@@ -45,6 +45,9 @@ class Session {
     this.dc = null;
     this.iceServers = [{ urls: ["stun:stun.l.google.com:19302"] }];
     this.statusEl = null;
+    // Accumulated text for the currently focused field. The agent's ACTION_SET_TEXT
+    // replaces the whole field, so we always send the full intended content.
+    this.typeBuffer = "";
     this.buildUi();
     this.connect();
   }
@@ -120,8 +123,9 @@ class Session {
   pasteToPhone() {
     const text = window.orbit && window.orbit.readClipboard ? window.orbit.readClipboard() : "";
     if (!text) return;
+    this.typeBuffer += text;
     this.sendControl({ type: CM.CLIPBOARD_SET, text });
-    this.sendControl({ type: CM.TEXT, text });
+    this.sendControl({ type: CM.TEXT, text: this.typeBuffer });
   }
 
   toggleFullscreen() {
@@ -251,6 +255,8 @@ class Session {
 
     v.addEventListener("mousedown", (e) => {
       e.preventDefault();
+      // A tap usually changes the focused field — start a fresh text buffer.
+      this.typeBuffer = "";
       const p = norm(e.clientX, e.clientY);
       down = { x: p.x, y: p.y, t: Date.now() };
     });
@@ -286,9 +292,11 @@ class Session {
       if (activeSessionId !== this.id) return;
       if (e.ctrlKey && e.key.toLowerCase() === "c") { this.sendControl({ type: CM.CLIPBOARD_GET }); return; }
       if (e.ctrlKey && e.key.toLowerCase() === "v") { this.pasteToPhone(); e.preventDefault(); return; }
-      if (e.key === "Escape") { this.sendControl({ type: CM.KEY, key: KEY.BACK }); e.preventDefault(); return; }
-      if (e.key === "Enter") { this.sendControl({ type: CM.TEXT, text: "\n" }); e.preventDefault(); return; }
-      if (e.key.length === 1) { this.sendControl({ type: CM.TEXT, text: e.key }); e.preventDefault(); }
+      if (e.ctrlKey || e.metaKey || e.altKey) return;
+      if (e.key === "Escape") { this.typeBuffer = ""; this.sendControl({ type: CM.KEY, key: KEY.BACK }); e.preventDefault(); return; }
+      if (e.key === "Backspace") { this.typeBuffer = this.typeBuffer.slice(0, -1); this.sendControl({ type: CM.TEXT, text: this.typeBuffer }); e.preventDefault(); return; }
+      if (e.key === "Enter") { this.typeBuffer += "\n"; this.sendControl({ type: CM.TEXT, text: this.typeBuffer }); e.preventDefault(); return; }
+      if (e.key.length === 1) { this.typeBuffer += e.key; this.sendControl({ type: CM.TEXT, text: this.typeBuffer }); e.preventDefault(); }
     };
     window.addEventListener("keydown", this._keyHandler);
   }
