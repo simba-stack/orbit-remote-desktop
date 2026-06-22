@@ -80,6 +80,8 @@ class Session {
         <button class="toolbar-btn" data-act="recents">▣ Recents</button>
         <button class="toolbar-btn" data-act="notifications">▼ Shade</button>
         <span class="spacer"></span>
+        <button class="toolbar-btn" data-act="paste" title="Вставить буфер ПК в активное поле телефона">📋 На телефон</button>
+        <button class="toolbar-btn" data-act="copy" title="Забрать буфер обмена с телефона на ПК">📥 С телефона</button>
         <button class="toolbar-btn" data-act="screenshot">⤓ Screenshot</button>
         <button class="toolbar-btn" data-act="fullscreen">⛶ Fullscreen</button>
         <button class="toolbar-btn danger" data-act="disconnect">⏻ Disconnect</button>
@@ -106,10 +108,20 @@ class Session {
       case "home": this.sendControl({ type: CM.KEY, key: KEY.HOME }); break;
       case "recents": this.sendControl({ type: CM.KEY, key: KEY.RECENTS }); break;
       case "notifications": this.sendControl({ type: CM.KEY, key: KEY.NOTIFICATIONS }); break;
+      case "paste": this.pasteToPhone(); break;
+      case "copy": this.sendControl({ type: CM.CLIPBOARD_GET }); break;
       case "screenshot": this.screenshot(); break;
       case "fullscreen": this.toggleFullscreen(); break;
       case "disconnect": this.close(); break;
     }
+  }
+
+  // Read the PC clipboard and inject it into the phone's focused text field.
+  pasteToPhone() {
+    const text = window.orbit && window.orbit.readClipboard ? window.orbit.readClipboard() : "";
+    if (!text) return;
+    this.sendControl({ type: CM.CLIPBOARD_SET, text });
+    this.sendControl({ type: CM.TEXT, text });
   }
 
   toggleFullscreen() {
@@ -212,7 +224,8 @@ class Session {
 
   onAgentEvent(ev) {
     if (ev.type === "clipboard" && ev.text != null) {
-      navigator.clipboard?.writeText(ev.text).catch(() => {});
+      if (window.orbit && window.orbit.writeClipboard) window.orbit.writeClipboard(ev.text);
+      else navigator.clipboard?.writeText(ev.text).catch(() => {});
     }
   }
 
@@ -272,13 +285,7 @@ class Session {
     this._keyHandler = (e) => {
       if (activeSessionId !== this.id) return;
       if (e.ctrlKey && e.key.toLowerCase() === "c") { this.sendControl({ type: CM.CLIPBOARD_GET }); return; }
-      if (e.ctrlKey && e.key.toLowerCase() === "v") {
-        navigator.clipboard?.readText().then((t) => {
-          this.sendControl({ type: CM.CLIPBOARD_SET, text: t });
-          this.sendControl({ type: CM.TEXT, text: t });
-        });
-        return;
-      }
+      if (e.ctrlKey && e.key.toLowerCase() === "v") { this.pasteToPhone(); e.preventDefault(); return; }
       if (e.key === "Escape") { this.sendControl({ type: CM.KEY, key: KEY.BACK }); e.preventDefault(); return; }
       if (e.key === "Enter") { this.sendControl({ type: CM.TEXT, text: "\n" }); e.preventDefault(); return; }
       if (e.key.length === 1) { this.sendControl({ type: CM.TEXT, text: e.key }); e.preventDefault(); }
