@@ -148,7 +148,11 @@ class Session {
   // ---- Signaling ----
   connect() {
     this.ws = new WebSocket(SIGNALING_URL);
-    this.ws.onmessage = (e) => this.onSignal(JSON.parse(e.data));
+    this.ws.onmessage = (e) => {
+      let msg;
+      try { msg = JSON.parse(e.data); } catch { return; }
+      this.onSignal(msg);
+    };
     this.ws.onclose = () => this.setStatus("error", "Disconnected");
     this.ws.onerror = () => this.setStatus("error", "Connection error");
   }
@@ -194,6 +198,11 @@ class Session {
     };
     this.pc.ontrack = (e) => {
       this.video.srcObject = e.streams[0];
+      // Minimize the receiver playout buffer for real-time control responsiveness.
+      const r = e.receiver;
+      try { if (r && "playoutDelayHint" in r) r.playoutDelayHint = 0; } catch {}
+      try { if (r && "jitterBufferTarget" in r) r.jitterBufferTarget = 0; } catch {}
+      this.video.play?.().catch(() => {});
       this.setStatus("connected", "");
     };
     this.pc.onconnectionstatechange = () => {
@@ -203,20 +212,42 @@ class Session {
       else if (s === "disconnected") this.setStatus("connecting", "Reconnecting…");
     };
 
-    // Receive video; create the control data channel.
-    this.pc.addTransceiver("video", { direction: "recvonly" });
-    this.dc = this.pc.createDataChannel("control", { ordered: true });
-    this.dc.onmessage = (e) => this.onAgentEvent(JSON.parse(e.data));
+    // Receive video; prefer H.264 (hardware decode on Windows, lower latency).
+    const tx = this.pc.addTransceiver("video", { direction: "recvonly" });
+    try {
+      if (RTCRtpReceiver.getCapabilities && tx.setCodecPreferences) {
+        const caps = RTCRtpReceiver.getCapabilities("video");
+        if (caps && caps.codecs) {
+          const ordered = caps.codecs.slice().sort((a, b) =>
+            ((b.mimeType === "video/H264") ? 1 : 0) - ((a.mimeType === "video/H264") ? 1 : 0));
+          tx.setCodecPreferences(ordered);
+        }
+      }
+    } catch {}
 
-    const offer = await this.pc.createOffer();
-    await this.pc.setLocalDescription(offer);
-    this.send({ type: "signal", sessionId: this.sessionId, data: { kind: "offer", sdp: offer.sdp } });
+    this.dc = this.pc.createDataChannel("control", { ordered: true });
+    this.dc.onmessage = (e) => {
+      let ev;
+      try { ev = JSON.parse(e.data); } catch { return; }
+      this.onAgentEvent(ev);
+    };
+
+    try {
+      const offer = await this.pc.createOffer();
+      await this.pc.setLocalDescription(offer);
+      this.send({ type: "signal", sessionId: this.sessionId, data: { kind: "offer", sdp: offer.sdp } });
+    } catch {
+      this.setStatus("error", "Negotiation failed");
+    }
   }
 
   async handleRemoteSignal(data) {
     if (!this.pc) return;
     if (data.kind === "answer") {
-      await this.pc.setRemoteDescription({ type: "answer", sdp: data.sdp });
+      if (this.pc.signalingState !== "have-local-offer") return;
+      try {
+        await this.pc.setRemoteDescription({ type: "answer", sdp: data.sdp });
+      } catch { /* stale/duplicate answer */ }
     } else if (data.kind === "candidate") {
       try {
         await this.pc.addIceCandidate({
@@ -306,7 +337,9 @@ class Session {
     try { if (this.sessionId) this.send({ type: "hangup", sessionId: this.sessionId }); } catch {}
     try { this.dc?.close(); } catch {}
     try { this.pc?.close(); } catch {}
+    try { if (this.ws) { this.ws.onmessage = this.ws.onclose = this.ws.onerror = null; } } catch {}
     try { this.ws?.close(); } catch {}
+    try { if (this.video) this.video.srcObject = null; } catch {}
     window.removeEventListener("keydown", this._keyHandler);
     this.tabEl.remove();
     this.viewEl.remove();
