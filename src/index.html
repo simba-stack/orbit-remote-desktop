@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'self'; style-src 'self' 'unsafe-inline'; connect-src wss: https:; img-src 'self' data:; media-src 'self' blob:;" />
+  <title>Orbit Remote</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div class="app">
+    <aside class="sidebar">
+      <div class="brand">
+        <span class="brand-mark"></span>
+        <span class="brand-name">Orbit&nbsp;Remote</span>
+        <button id="theme-toggle" class="icon-btn" title="Toggle theme">◐</button>
+      </div>
+
+      <div class="connect-box">
+        <input id="device-id" class="input" inputmode="numeric" placeholder="Device ID" />
+        <input id="device-code" class="input" inputmode="numeric" placeholder="Code" />
+        <input id="device-name" class="input" placeholder="Name (optional)" />
+        <button id="connect-btn" class="btn btn-primary">Connect</button>
+        <label class="save-row"><input type="checkbox" id="save-device" /> Save device</label>
+      </div>
+
+      <div class="search-row">
+        <input id="search" class="input" placeholder="Search devices…" />
+      </div>
+
+      <div class="device-list" id="device-list"></div>
+    </aside>
+
+    <main class="main">
+      <div class="tabs" id="tabs"></div>
+      <div class="stage" id="stage">
+        <div class="empty-state" id="empty-state">
+          <div class="empty-icon"></div>
+          <h2>No active session</h2>
+          <p>Enter a Device ID and code, or pick a saved device to connect.</p>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
