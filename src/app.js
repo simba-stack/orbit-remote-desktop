@@ -228,6 +228,7 @@ class Session {
 
   onAgentEvent(ev) {
     if (ev.type === "clipboard" && ev.text != null) {
+      lastClip = ev.text; // avoid bouncing it straight back to the phone
       if (window.orbit && window.orbit.writeClipboard) window.orbit.writeClipboard(ev.text);
       else navigator.clipboard?.writeText(ev.text).catch(() => {});
     }
@@ -323,7 +324,24 @@ class Session {
 // ---------------------------------------------------------------------------
 const sessions = new Map();
 let activeSessionId = null;
+let lastClip = "";
 const MAX_SESSIONS = 20;
+
+// Auto clipboard sync: when the PC clipboard changes, push it to the active phone
+// so it lands in the device's system clipboard (paste chip). Falls back gracefully
+// on devices where Android blocks background clipboard writes.
+function startClipboardSync() {
+  setInterval(() => {
+    if (!activeSessionId) return;
+    const s = sessions.get(activeSessionId);
+    if (!s || !s.dc || s.dc.readyState !== "open") return;
+    const t = (window.orbit && window.orbit.readClipboard) ? window.orbit.readClipboard() : "";
+    if (t && t !== lastClip) {
+      lastClip = t;
+      s.sendControl({ type: CM.CLIPBOARD_SET, text: t });
+    }
+  }, 800);
+}
 
 function activate(id) {
   activeSessionId = id;
@@ -396,6 +414,7 @@ function upsertDevice(id, code, name) {
 function boot() {
   applyTheme(localStorage.getItem(LS_THEME) || "dark");
   renderDeviceList();
+  startClipboardSync();
 
   document.getElementById("theme-toggle").addEventListener("click", () => {
     const cur = document.documentElement.getAttribute("data-theme");
