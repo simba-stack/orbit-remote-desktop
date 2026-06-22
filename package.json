@@ -1,0 +1,40 @@
+{
+  "name": "orbit-remote-desktop",
+  "version": "1.0.0",
+  "description": "Orbit Remote — Windows desktop client for controlling your Android devices over WebRTC.",
+  "main": "main.js",
+  "author": "Orbit Remote",
+  "license": "MIT",
+  "scripts": {
+    "start": "electron .",
+    "dist": "electron-builder --win nsis",
+    "pack": "electron-builder --dir"
+  },
+  "devDependencies": {
+    "electron": "^31.3.0",
+    "electron-builder": "^24.13.3"
+  },
+  "build": {
+    "appId": "com.orbit.remote.desktop",
+    "productName": "Orbit Remote",
+    "files": [
+      "main.js",
+      "preload.js",
+      "src/**/*"
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": ["x64"]
+        }
+      ],
+      "artifactName": "OrbitRemote-Setup.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true
+    }
+  }
+}
