@@ -25,6 +25,21 @@ function loadDevices() {
 }
 function saveDevices(list) { localStorage.setItem(LS_DEVICES, JSON.stringify(list)); }
 
+// Short, unambiguous room code for the chat bridge (no 0/O/1/I).
+function genRoomCode() {
+  const A = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+  const r = new Uint32Array(6);
+  crypto.getRandomValues(r);
+  let s = "";
+  for (let i = 0; i < 6; i++) s += A[r[i] % A.length];
+  return s;
+}
+
+function fmtTime(ts) {
+  const d = ts ? new Date(ts) : new Date();
+  try { return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }); } catch { return ""; }
+}
+
 function applyTheme(theme) {
   document.documentElement.setAttribute("data-theme", theme);
   localStorage.setItem(LS_THEME, theme);
@@ -85,13 +100,30 @@ class Session {
         <span class="spacer"></span>
         <button class="toolbar-btn" data-act="paste" title="Вставить буфер ПК в активное поле телефона">📋 На телефон</button>
         <button class="toolbar-btn" data-act="copy" title="Забрать буфер обмена с телефона на ПК">📥 С телефона</button>
+        <button class="toolbar-btn" data-act="chat" title="Чат-мост с телефоном (буфер через сообщения)">💬 Чат</button>
         <button class="toolbar-btn" data-act="screenshot">⤓ Screenshot</button>
         <button class="toolbar-btn" data-act="fullscreen">⛶ Fullscreen</button>
         <button class="toolbar-btn danger" data-act="disconnect">⏻ Disconnect</button>
       </div>
-      <div class="video-wrap">
-        <video class="remote" autoplay playsinline></video>
-        <div class="status-overlay"></div>
+      <div class="session-body">
+        <div class="video-wrap">
+          <video class="remote" autoplay playsinline></video>
+          <div class="status-overlay"></div>
+        </div>
+        <aside class="chat-panel">
+          <div class="chat-head">
+            <span class="chat-title">Чат-мост</span>
+            <span class="chat-code-label">код:</span>
+            <code class="chat-code"></code>
+            <button class="chat-copy-code" title="Скопировать код">⧉</button>
+          </div>
+          <div class="chat-hint">Открой <b>сайт → Чат-мост</b> на телефоне и введи этот код. Текст отсюда придёт на телефон, там жми «Копировать».</div>
+          <div class="chat-messages"></div>
+          <div class="chat-input-row">
+            <input class="chat-input" type="text" placeholder="Сообщение на телефон…" maxlength="2000" />
+            <button class="chat-send">➤</button>
+          </div>
+        </aside>
       </div>`;
     this.viewEl = view;
     this.video = view.querySelector("video.remote");
@@ -100,6 +132,23 @@ class Session {
 
     view.querySelectorAll(".toolbar-btn").forEach((b) =>
       b.addEventListener("click", () => this.onToolbar(b.dataset.act)));
+
+    // ---- Chat bridge ----
+    this.room = genRoomCode();
+    this.chatSeen = new Set();
+    this.chatJoined = false;
+    this.chatPanel = view.querySelector(".chat-panel");
+    this.chatLog = view.querySelector(".chat-messages");
+    this.chatInput = view.querySelector(".chat-input");
+    view.querySelector(".chat-code").textContent = this.room;
+    view.querySelector(".chat-copy-code").addEventListener("click", () => {
+      window.orbit?.writeClipboard?.(this.room);
+    });
+    view.querySelector(".chat-send").addEventListener("click", () => this.sendChat());
+    this.chatInput.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") { e.preventDefault(); this.sendChat(); }
+      e.stopPropagation(); // keep keystrokes out of the phone-typing handler
+    });
 
     this.attachInput();
     this.setStatus("connecting", "Connecting…");
@@ -113,6 +162,7 @@ class Session {
       case "notifications": this.sendControl({ type: CM.KEY, key: KEY.NOTIFICATIONS }); break;
       case "paste": this.pasteToPhone(); break;
       case "copy": this.sendControl({ type: CM.CLIPBOARD_GET }); break;
+      case "chat": this.toggleChat(); break;
       case "screenshot": this.screenshot(); break;
       case "fullscreen": this.toggleFullscreen(); break;
       case "disconnect": this.close(); break;
@@ -145,6 +195,60 @@ class Session {
     }
   }
 
+  // ---- Chat bridge ----
+  joinChat() {
+    if (this.chatJoined) return;
+    this.chatJoined = true;
+    this.send({ type: "chat-join", room: this.room });
+  }
+
+  toggleChat() {
+    const open = this.chatPanel.classList.toggle("open");
+    if (open) this.chatInput.focus();
+  }
+
+  sendChat() {
+    const text = (this.chatInput.value || "").trim();
+    if (!text) return;
+    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return;
+    this.send({ type: "chat-send", room: this.room, text, from: "ПК" });
+    this.chatInput.value = "";
+    this.chatInput.focus();
+  }
+
+  renderChat(m) {
+    if (!m || m.id == null || this.chatSeen.has(m.id)) return;
+    this.chatSeen.add(m.id);
+
+    const mine = m.from === "ПК";
+    const row = document.createElement("div");
+    row.className = `chat-msg-row ${mine ? "mine" : "theirs"}`;
+
+    const bubble = document.createElement("div");
+    bubble.className = "chat-bubble";
+
+    const meta = document.createElement("div");
+    meta.className = "chat-meta";
+    meta.textContent = `${m.from || "?"} · ${fmtTime(m.ts)}`;
+
+    const body = document.createElement("div");
+    body.className = "chat-text";
+    body.textContent = m.text || "";
+
+    const copy = document.createElement("button");
+    copy.className = "chat-copy-msg";
+    copy.title = "Копировать на ПК";
+    copy.textContent = "⧉";
+    copy.addEventListener("click", () => window.orbit?.writeClipboard?.(m.text || ""));
+
+    bubble.append(meta, body, copy);
+    row.appendChild(bubble);
+    this.chatLog.appendChild(row);
+
+    const nearBottom = this.chatLog.scrollHeight - this.chatLog.scrollTop - this.chatLog.clientHeight < 80;
+    if (nearBottom || mine) this.chatLog.scrollTop = this.chatLog.scrollHeight;
+  }
+
   // ---- Signaling ----
   connect() {
     this.ws = new WebSocket(SIGNALING_URL);
@@ -164,6 +268,16 @@ class Session {
       case "welcome":
         if (Array.isArray(msg.iceServers) && msg.iceServers.length) this.iceServers = msg.iceServers;
         this.send({ type: "connect", targetId: this.deviceId, code: this.code });
+        this.joinChat();
+        break;
+      case "chat-history":
+        if (msg.room !== this.room) break;
+        this.chatLog.replaceChildren();
+        this.chatSeen.clear();
+        if (Array.isArray(msg.messages)) msg.messages.forEach((m) => this.renderChat(m));
+        break;
+      case "chat-msg":
+        if (msg.room === this.room) this.renderChat(msg.message);
         break;
       case "connected":
         this.sessionId = msg.sessionId;
