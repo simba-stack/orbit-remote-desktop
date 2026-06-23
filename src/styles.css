@@ -85,7 +85,7 @@ body { font-family: var(--font); background: var(--bg); color: var(--text); over
 .toolbar-btn:hover { border-color: var(--accent); }
 .toolbar-btn.danger:hover { border-color: var(--danger); color: var(--danger); }
 .video-wrap { flex: 1; display: flex; align-items: center; justify-content: center; background: #000; overflow: hidden; }
-video.remote { max-width: 100%; max-height: 100%; outline: none; cursor: crosshair; }
+video.remote { max-width: 100%; max-height: 100%; object-fit: contain; outline: none; cursor: crosshair; }
 .status-overlay { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); color: var(--text-dim); font-size: 15px; }
 
 /* ---- Chat bridge panel ---- */
