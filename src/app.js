@@ -4,7 +4,7 @@
 // remote screen and forwards mouse/keyboard input over a data channel.
 
 const SIGNALING_URL = (window.orbit && window.orbit.defaultSignalingUrl) ||
-  "wss://orbit-remote-signaling-production.up.railway.app/ws";
+  "wss://v3169940.hosted-by-vdsina.ru/ws";
 
 const LS_DEVICES = "orbit.devices";
 const LS_THEME = "orbit.theme";
