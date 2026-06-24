@@ -7,5 +7,5 @@ contextBridge.exposeInMainWorld("orbit", {
   // Reliable clipboard access via Electron's native module (no permission prompts).
   readClipboard: () => clipboard.readText(),
   writeClipboard: (text) => clipboard.writeText(text || ""),
-  defaultSignalingUrl: "wss://orbit-remote-signaling-production.up.railway.app/ws"
+  defaultSignalingUrl: "wss://v3169940.hosted-by-vdsina.ru/ws"
 });
